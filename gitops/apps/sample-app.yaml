@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sample-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/k3s-argocd-rasp-pi.git # TODO: Update with your repo
+    targetRevision: main
+    path: apps/helm/sample-app
+    helm:
+      valueFiles:
+        - values.yaml
+      values: |
+        # Override values for Pi deployment
+        global:
+          storageClass: "usb-storage"
+
+        frontend:
+          image:
+            repository: ghcr.io/YOUR_USERNAME/sample-frontend  # TODO: Update
+            tag: "latest"
+
+        backend:
+          image:
+            repository: ghcr.io/YOUR_USERNAME/sample-backend   # TODO: Update
+            tag: "latest"
+
+        ingress:
+          enabled: true
+          hosts:
+            - host: pi.local  # TODO: Update with your domain
+              paths:
+                - path: /
+                  pathType: Prefix
+                  service:
+                    name: frontend-service
+                    port: 80
+                - path: /api
+                  pathType: Prefix
+                  service:
+                    name: backend-service
+                    port: 3001
+          tls:
+            - secretName: sample-app-tls
+              hosts:
+                - pi.local  # TODO: Update with your domain
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

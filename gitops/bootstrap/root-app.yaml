@@ -1,0 +1,24 @@
+# Root Application - the only thing you kubectl apply
+# This manages all child applications in the apps/ directory
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/k3s-argocd-rasp-pi.git # TODO: Update with your repo
+    targetRevision: main
+    path: gitops/apps # Folder with child apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,15 +1,14 @@
-.PHONY: help mount-usb bootstrap port-forward-grafana port-forward-argocd backup restore clean status install-k3s
+.PHONY: help mount-usb install-k3s install-argocd bootstrap port-forward-grafana port-forward-argocd backup restore clean status
 
 # Default target
 help:
 	@echo "Available targets:"
 	@echo "  mount-usb              - Mount USB storage and configure fstab"
 	@echo "  install-k3s            - Install k3s cluster"
+	@echo "  install-argocd         - Install Argo CD using official manifests"
 	@echo "  bootstrap              - Bootstrap entire k3s GitOps platform"
 	@echo "  port-forward-grafana   - Port forward Grafana (localhost:3000)"
 	@echo "  port-forward-argocd    - Port forward Argo CD (localhost:8080)"
-	@echo "  backup                 - Create Velero backup"
-	@echo "  restore                - Restore from Velero backup"
 	@echo "  status                 - Show cluster status"
 	@echo "  clean                  - Clean up all resources"
 
@@ -32,20 +31,29 @@ install-k3s:
 	sleep 30
 	kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
+# Install Argo CD using official manifests
+install-argocd:
+	@echo "Installing Argo CD..."
+	kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+	kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+	@echo "Waiting for Argo CD to be ready..."
+	kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd
+
 # Bootstrap the entire platform
-bootstrap: install-k3s
+bootstrap: install-k3s install-argocd
 	@echo "Bootstrapping k3s GitOps platform..."
 	@echo "Step 1: Creating storage directories..."
 	mkdir -p /mnt/usb-data/{postgres,prometheus,loki,velero}
 	@echo "Step 2: Applying Terraform configurations..."
 	cd infra/terraform && terraform init && terraform apply -auto-approve
-	@echo "Step 3: Installing Argo CD..."
-	kubectl apply -f gitops/bootstrap/
-	@echo "Step 4: Waiting for Argo CD to be ready..."
-	kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd
-	@echo "Step 5: Applying App of Apps..."
-	kubectl apply -f gitops/apps/app-of-apps.yaml
-	@echo "Bootstrap complete! Use 'make port-forward-grafana' and 'make port-forward-argocd' to access services."
+	@echo "Step 3: Applying root application..."
+	kubectl apply -f gitops/bootstrap/root-app.yaml
+	@echo "Bootstrap complete!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "1. Wait for all applications to sync (check with: kubectl get applications -n argocd)"
+	@echo "2. Use 'make port-forward-grafana' to access monitoring"
+	@echo "3. Use 'make port-forward-argocd' to access GitOps dashboard"
 
 # Port forward Grafana
 port-forward-grafana:
@@ -61,27 +69,13 @@ port-forward-argocd:
 	@echo "Password: $$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)"
 	kubectl port-forward -n argocd svc/argocd-server 8080:443
 
-# Create backup
-backup:
-	@echo "Creating Velero backup..."
-	velero backup create backup-$$(date +%Y%m%d-%H%M%S) --include-namespaces=default,monitoring,loki,argocd
-	@echo "Backup created. List backups with: velero backup get"
-
-# Restore from backup
-restore:
-	@if [ -z "$(BACKUP_NAME)" ]; then \
-		echo "Usage: make restore BACKUP_NAME=<backup-name>"; \
-		echo "Available backups:"; \
-		velero backup get; \
-		exit 1; \
-	fi
-	@echo "Restoring from backup: $(BACKUP_NAME)"
-	velero restore create restore-$$(date +%Y%m%d-%H%M%S) --from-backup $(BACKUP_NAME)
-
 # Get cluster status
 status:
 	@echo "=== Cluster Status ==="
 	kubectl get nodes
+	@echo ""
+	@echo "=== Argo CD Applications ==="
+	kubectl get applications -n argocd
 	@echo ""
 	@echo "=== All Pods ==="
 	kubectl get pods -A
@@ -98,10 +92,25 @@ clean:
 	@echo "This will remove all applications and data. Are you sure? [y/N]"
 	@read -r REPLY; \
 	if [ "$$REPLY" = "y" ] || [ "$$REPLY" = "Y" ]; then \
-		kubectl delete -f gitops/apps/app-of-apps.yaml --ignore-not-found; \
-		kubectl delete namespace argocd monitoring loki velero --ignore-not-found; \
+		kubectl delete -f gitops/bootstrap/root-app.yaml --ignore-not-found; \
+		kubectl delete namespace argocd monitoring logging ingress-nginx cert-manager velero --ignore-not-found; \
 		cd infra/terraform && terraform destroy -auto-approve; \
 		echo "Cleanup complete."; \
 	else \
 		echo "Cleanup cancelled."; \
 	fi
+
+# Build and push images (for development)
+build-images:
+	@echo "Building and pushing Docker images..."
+	@echo "Building frontend..."
+	cd apps/frontend && docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/YOUR_USERNAME/sample-frontend:latest --push .
+	@echo "Building backend..."
+	cd apps/backend && docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/YOUR_USERNAME/sample-backend:latest --push .
+	@echo "Images built and pushed successfully!"
+
+# Sync all Argo CD applications
+sync-apps:
+	@echo "Syncing all Argo CD applications..."
+	kubectl patch application root -n argocd --type merge -p '{"operation":{"sync":{"syncStrategy":{"hook":{"force":true}}}}}'
+	@echo "Sync initiated. Check status with: kubectl get applications -n argocd"
