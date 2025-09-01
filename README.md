@@ -36,8 +36,7 @@ A clean, minimal GitOps platform for Raspberry Pi 4 (ARM64) using k3s, Argo CD, 
 ```
 k3s-argocd-rasp-pi/
 ├── infra/                    # Infrastructure as Code
-│   ├── terraform/           # Terraform configurations
-│   └── bootstrap/           # k3s installation scripts
+│   └── ansible/             # Ansible playbooks and configs
 ├── gitops/                  # GitOps configurations
 │   ├── bootstrap/           # Root application (apply once)
 │   └── apps/               # Child applications (managed by Argo CD)
@@ -79,9 +78,10 @@ make bootstrap
 This will:
 
 1. Install k3s with Pi-optimized settings
-2. Install Argo CD using official manifests
-3. Apply Terraform configurations for storage and namespaces
-4. Deploy the root application that manages all other apps
+2. Setup USB storage and create directories
+3. Create Kubernetes namespaces and storage resources
+4. Install Argo CD using official manifests
+5. Deploy the root application that manages all other apps
 
 ### 3. Access Services
 

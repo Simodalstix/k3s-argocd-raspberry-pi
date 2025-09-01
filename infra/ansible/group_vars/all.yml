@@ -1,0 +1,19 @@
+---
+# Global variables for all hosts
+k3s_version: v1.28.5+k3s1
+usb_mount_point: /mnt/usb-data
+cluster_domain: cluster.local
+
+# Application settings
+app_namespace: default
+monitoring_namespace: monitoring
+argocd_namespace: argocd
+
+# Storage settings
+postgres_storage_size: 2Gi
+prometheus_storage_size: 3Gi
+loki_storage_size: 2Gi
+
+# Ingress settings - use different ports to avoid conflicts
+ingress_http_port: 8080
+ingress_https_port: 8443

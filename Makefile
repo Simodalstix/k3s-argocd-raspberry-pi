@@ -1,59 +1,37 @@
-.PHONY: help mount-usb install-k3s install-argocd bootstrap port-forward-grafana port-forward-argocd backup restore clean status
+.PHONY: help setup-ansible bootstrap port-forward-grafana port-forward-argocd status clean sync-apps
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  mount-usb              - Mount USB storage and configure fstab"
-	@echo "  install-k3s            - Install k3s cluster"
-	@echo "  install-argocd         - Install Argo CD using official manifests"
+	@echo "  setup-ansible          - Install Ansible collections"
 	@echo "  bootstrap              - Bootstrap entire k3s GitOps platform"
+	@echo "  deploy-root-app        - Deploy Argo CD root application"
 	@echo "  port-forward-grafana   - Port forward Grafana (localhost:3000)"
 	@echo "  port-forward-argocd    - Port forward Argo CD (localhost:8080)"
 	@echo "  status                 - Show cluster status"
+	@echo "  sync-apps              - Force sync all applications"
 	@echo "  clean                  - Clean up all resources"
 
-# Mount USB storage
-mount-usb:
-	@echo "Mounting USB storage..."
-	sudo mkdir -p /mnt/usb-data
-	@echo "Please ensure USB drive is connected and run:"
-	@echo "sudo fdisk -l  # to identify your USB device (usually /dev/sda1)"
-	@echo "sudo mkfs.ext4 /dev/sda1  # format if needed"
-	@echo "sudo mount /dev/sda1 /mnt/usb-data"
-	@echo "sudo chown -R $$USER:$$USER /mnt/usb-data"
-	@echo "echo '/dev/sda1 /mnt/usb-data ext4 defaults 0 2' | sudo tee -a /etc/fstab"
-
-# Install k3s
-install-k3s:
-	@echo "Installing k3s..."
-	curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --write-kubeconfig-mode 644" sh -
-	@echo "Waiting for k3s to be ready..."
-	sleep 30
-	kubectl wait --for=condition=Ready nodes --all --timeout=300s
-
-# Install Argo CD using official manifests
-install-argocd:
-	@echo "Installing Argo CD..."
-	kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-	kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-	@echo "Waiting for Argo CD to be ready..."
-	kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n argocd
+# Setup Ansible
+setup-ansible:
+	@echo "Installing Ansible collections..."
+	cd infra/ansible && ansible-galaxy collection install -r requirements.yml
 
 # Bootstrap the entire platform
-bootstrap: install-k3s install-argocd
-	@echo "Bootstrapping k3s GitOps platform..."
-	@echo "Step 1: Creating storage directories..."
-	mkdir -p /mnt/usb-data/{postgres,prometheus,loki,velero}
-	@echo "Step 2: Applying Terraform configurations..."
-	cd infra/terraform && terraform init && terraform apply -auto-approve
-	@echo "Step 3: Applying root application..."
-	kubectl apply -f gitops/bootstrap/root-app.yaml
+bootstrap: setup-ansible
+	@echo "Bootstrapping k3s GitOps platform with Ansible..."
+	cd infra/ansible && ansible-playbook playbooks/bootstrap.yml
 	@echo "Bootstrap complete!"
 	@echo ""
 	@echo "Next steps:"
-	@echo "1. Wait for all applications to sync (check with: kubectl get applications -n argocd)"
+	@echo "1. Run 'make deploy-root-app' to deploy GitOps applications"
 	@echo "2. Use 'make port-forward-grafana' to access monitoring"
 	@echo "3. Use 'make port-forward-argocd' to access GitOps dashboard"
+
+# Deploy root application
+deploy-root-app:
+	@echo "Deploying Argo CD root application..."
+	cd infra/ansible && ansible-playbook playbooks/deploy-root-app.yml
 
 # Port forward Grafana
 port-forward-grafana:
@@ -93,8 +71,9 @@ clean:
 	@read -r REPLY; \
 	if [ "$$REPLY" = "y" ] || [ "$$REPLY" = "Y" ]; then \
 		kubectl delete -f gitops/bootstrap/root-app.yaml --ignore-not-found; \
-		kubectl delete namespace argocd monitoring logging ingress-nginx cert-manager velero --ignore-not-found; \
-		cd infra/terraform && terraform destroy -auto-approve; \
+		kubectl delete namespace argocd monitoring loki ingress-nginx cert-manager velero --ignore-not-found; \
+		sudo systemctl stop k3s; \
+		sudo /usr/local/bin/k3s-uninstall.sh; \
 		echo "Cleanup complete."; \
 	else \
 		echo "Cleanup cancelled."; \

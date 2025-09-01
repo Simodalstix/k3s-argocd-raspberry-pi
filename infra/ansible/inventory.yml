@@ -1,0 +1,12 @@
+all:
+  children:
+    raspberry_pi:
+      hosts:
+        pi-node:
+          ansible_host: localhost
+          ansible_connection: local
+          ansible_user: "{{ ansible_env.USER }}"
+      vars:
+        k3s_version: v1.28.5+k3s1
+        usb_mount_point: /mnt/usb-data
+        cluster_domain: cluster.local

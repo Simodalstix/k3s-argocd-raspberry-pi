@@ -1,0 +1,22 @@
+---
+- name: Deploy Argo CD Root Application
+  hosts: raspberry_pi
+  gather_facts: no
+  
+  tasks:
+    - name: Apply root application
+      kubernetes.core.k8s:
+        src: "{{ playbook_dir }}/../../../gitops/bootstrap/root-app.yaml"
+        state: present
+        
+    - name: Wait for root application to sync
+      kubernetes.core.k8s_info:
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: root-app
+        namespace: argocd
+        wait: true
+        wait_condition:
+          type: Synced
+          status: "True"
+        wait_timeout: 300
