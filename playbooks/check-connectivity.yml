@@ -1,0 +1,36 @@
+---
+- name: Check Pi Connectivity and Requirements
+  hosts: k3s_cluster
+  gather_facts: yes
+  
+  tasks:
+    - name: Test basic connectivity
+      ping:
+      
+    - name: Check sudo access
+      become: yes
+      command: whoami
+      register: sudo_test
+      
+    - name: Verify Python installation
+      command: python3 --version
+      register: python_version
+      
+    - name: Check available memory
+      shell: free -h | grep Mem | awk '{print $2}'
+      register: memory_info
+      
+    - name: Check disk space
+      shell: df -h / | tail -1 | awk '{print $4}'
+      register: disk_space
+      
+    - name: Display system information
+      debug:
+        msg: |
+          System Check Results:
+          - Sudo access: {{ sudo_test.stdout }}
+          - Python version: {{ python_version.stdout }}
+          - Available memory: {{ memory_info.stdout }}
+          - Free disk space: {{ disk_space.stdout }}
+          - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          - Architecture: {{ ansible_architecture }}

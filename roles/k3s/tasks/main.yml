@@ -21,24 +21,36 @@
 
 - name: Create .kube directory
   file:
-    path: "{{ ansible_env.HOME }}/.kube"
+    path: "/home/{{ ansible_user }}/.kube"
     state: directory
-    owner: "{{ ansible_env.USER }}"
+    owner: "{{ ansible_user }}"
     mode: '0755'
-  become: no
+  become: yes
 
 - name: Copy kubeconfig
   copy:
     src: "{{ k3s_config_dir }}/k3s.yaml"
-    dest: "{{ kubeconfig_path }}"
+    dest: "/home/{{ ansible_user }}/.kube/config"
     remote_src: yes
-    owner: "{{ ansible_env.USER }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: '0600'
+  become: yes
+
+- name: Wait for K3s service to be active
+  systemd:
+    name: k3s
+    state: started
+  become: yes
 
 - name: Verify cluster is ready
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Node
+    kubeconfig: "/home/{{ ansible_user }}/.kube/config"
   register: cluster_nodes
-  retries: 10
-  delay: 30
+  retries: 5
+  delay: 10
+  become: no
+  environment:
+    KUBECONFIG: "/home/{{ ansible_user }}/.kube/config"

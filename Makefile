@@ -1,10 +1,11 @@
-.PHONY: help setup install-k3s install-argocd deploy-demo status clean
+.PHONY: help setup check install-k3s install-argocd deploy-demo status clean
 
 # Default target
 help:
 	@echo "K3s + ArgoCD GitOps Platform"
 	@echo "Available targets:"
 	@echo "  setup                  - Install Ansible collections"
+	@echo "  check                  - Test Pi connectivity and requirements"
 	@echo "  install-k3s            - Install K3s cluster"
 	@echo "  install-argocd         - Deploy ArgoCD"
 	@echo "  deploy-demo            - Deploy demo application"
@@ -16,6 +17,11 @@ help:
 setup:
 	@echo "Installing Ansible collections..."
 	ansible-galaxy collection install -r requirements.yml
+
+# Check Pi connectivity
+check:
+	@echo "Checking Pi connectivity and requirements..."
+	ansible-playbook playbooks/check-connectivity.yml
 
 # Install K3s
 install-k3s: setup

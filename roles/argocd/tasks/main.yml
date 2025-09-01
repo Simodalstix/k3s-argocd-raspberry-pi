@@ -1,42 +1,36 @@
 ---
+- name: Install Python kubernetes library
+  apt:
+    name: python3-kubernetes
+    state: present
+    update_cache: yes
+  become: yes
+
 - name: Create ArgoCD namespace
-  kubernetes.core.k8s:
-    name: "{{ argocd_namespace }}"
-    api_version: v1
-    kind: Namespace
-    state: present
+  shell: kubectl create namespace {{ argocd_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+  environment:
+    KUBECONFIG: "/home/{{ ansible_user }}/.kube/config"
+  become: no
 
-- name: Download ArgoCD manifests
-  get_url:
-    url: "{{ argocd_manifest_url }}"
-    dest: /tmp/argocd-install.yaml
-
-- name: Apply ArgoCD manifests
-  kubernetes.core.k8s:
-    src: /tmp/argocd-install.yaml
-    state: present
-    wait: true
-    wait_timeout: 600
+- name: Download and apply ArgoCD manifests
+  shell: |
+    curl -sSL {{ argocd_manifest_url }} | kubectl apply -n {{ argocd_namespace }} -f -
+  environment:
+    KUBECONFIG: "/home/{{ ansible_user }}/.kube/config"
+  become: no
 
 - name: Wait for ArgoCD server deployment
-  kubernetes.core.k8s_info:
-    api_version: apps/v1
-    kind: Deployment
-    name: argocd-server
-    namespace: "{{ argocd_namespace }}"
-    wait: true
-    wait_condition:
-      type: Available
-      status: "True"
-    wait_timeout: 600
+  shell: kubectl wait --for=condition=available --timeout=600s deployment/argocd-server -n {{ argocd_namespace }}
+  environment:
+    KUBECONFIG: "/home/{{ ansible_user }}/.kube/config"
+  become: no
 
 - name: Get ArgoCD admin password
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: Secret
-    name: argocd-initial-admin-secret
-    namespace: "{{ argocd_namespace }}"
-  register: argocd_secret
+  shell: kubectl -n {{ argocd_namespace }} get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+  register: argocd_password
+  environment:
+    KUBECONFIG: "/home/{{ ansible_user }}/.kube/config"
+  become: no
 
 - name: Display ArgoCD access information
   debug:
@@ -44,5 +38,4 @@
       ArgoCD is ready!
       Access: kubectl port-forward svc/argocd-server -n argocd 8080:443
       Username: admin
-      Password: {{ argocd_secret.resources[0].data.password | b64decode }}
-  when: argocd_secret.resources | length > 0
+      Password: {{ argocd_password.stdout }}
