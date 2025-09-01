@@ -6,46 +6,21 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/YOUR_USERNAME/k3s-argocd-rasp-pi.git # TODO: Update with your repo
-    targetRevision: main
+    repoURL: https://github.com/YOUR_USERNAME/k3s-argocd-rasp-pi.git
     path: apps/helm/sample-app
+    targetRevision: HEAD
     helm:
-      valueFiles:
-        - values.yaml
       values: |
-        # Override values for Pi deployment
-        global:
-          storageClass: "usb-storage"
-
         frontend:
-          image:
-            repository: ghcr.io/YOUR_USERNAME/sample-frontend  # TODO: Update
-            tag: "latest"
-
+          service:
+            type: NodePort
+            nodePort: 30080
         backend:
-          image:
-            repository: ghcr.io/YOUR_USERNAME/sample-backend   # TODO: Update
-            tag: "latest"
-
+          service:
+            type: NodePort
+            nodePort: 30081
         ingress:
-          enabled: true
-          hosts:
-            - host: pi.local  # TODO: Update with your domain
-              paths:
-                - path: /
-                  pathType: Prefix
-                  service:
-                    name: frontend-service
-                    port: 80
-                - path: /api
-                  pathType: Prefix
-                  service:
-                    name: backend-service
-                    port: 3001
-          tls:
-            - secretName: sample-app-tls
-              hosts:
-                - pi.local  # TODO: Update with your domain
+          enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: default
@@ -53,5 +28,3 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

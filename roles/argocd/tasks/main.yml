@@ -1,0 +1,48 @@
+---
+- name: Create ArgoCD namespace
+  kubernetes.core.k8s:
+    name: "{{ argocd_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Download ArgoCD manifests
+  get_url:
+    url: "{{ argocd_manifest_url }}"
+    dest: /tmp/argocd-install.yaml
+
+- name: Apply ArgoCD manifests
+  kubernetes.core.k8s:
+    src: /tmp/argocd-install.yaml
+    state: present
+    wait: true
+    wait_timeout: 600
+
+- name: Wait for ArgoCD server deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: argocd-server
+    namespace: "{{ argocd_namespace }}"
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 600
+
+- name: Get ArgoCD admin password
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: argocd-initial-admin-secret
+    namespace: "{{ argocd_namespace }}"
+  register: argocd_secret
+
+- name: Display ArgoCD access information
+  debug:
+    msg: |
+      ArgoCD is ready!
+      Access: kubectl port-forward svc/argocd-server -n argocd 8080:443
+      Username: admin
+      Password: {{ argocd_secret.resources[0].data.password | b64decode }}
+  when: argocd_secret.resources | length > 0

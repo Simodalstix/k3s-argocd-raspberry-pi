@@ -1,281 +1,212 @@
-# Raspberry Pi k3s GitOps Platform
+# K3s + ArgoCD GitOps Platform
 
-A clean, minimal GitOps platform for Raspberry Pi 4 (ARM64) using k3s, Argo CD, and comprehensive observability.
+[![Ansible](https://img.shields.io/badge/Ansible-2.15+-red.svg)](https://ansible.com)
+[![K3s](https://img.shields.io/badge/K3s-v1.28.5-blue.svg)](https://k3s.io)
+[![ArgoCD](https://img.shields.io/badge/ArgoCD-v2.9.3-green.svg)](https://argoproj.github.io/cd/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Architecture Overview
+Automated provisioning of a lightweight Kubernetes cluster using **K3s** and **GitOps** deployment with **ArgoCD**. This project demonstrates infrastructure automation and modern deployment practices suitable for development, testing, and small production environments.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Raspberry Pi 4 (ARM64)                  │
-│                   Ubuntu Server 22.04                      │
-├─────────────────────────────────────────────────────────────┤
-│                        k3s Cluster                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │   Argo CD   │  │ Sample App  │  │   Observability     │ │
-│  │ (GitOps)    │  │ Frontend    │  │ - Prometheus        │ │
-│  │             │  │ Backend     │  │ - Grafana           │ │
-│  │             │  │ Database    │  │ - Loki              │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │ Ingress     │  │ Cert Mgr    │  │      Velero         │ │
-│  │ Nginx       │  │ (Let's      │  │    (Backups)        │ │
-│  │             │  │ Encrypt)    │  │                     │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-├─────────────────────────────────────────────────────────────┤
-│              External USB Storage (8GB)                    │
-│                  /mnt/usb-data                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
-│  │ Postgres    │  │ Prometheus  │  │ Loki + Velero       │ │
-│  │ Data        │  │ TSDB        │  │ Backups             │ │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Project Structure
+## Architecture
 
 ```
-k3s-argocd-rasp-pi/
-├── infra/                    # Infrastructure as Code
-│   └── ansible/             # Ansible playbooks and configs
-├── gitops/                  # GitOps configurations
-│   ├── bootstrap/           # Root application (apply once)
-│   └── apps/               # Child applications (managed by Argo CD)
-├── apps/                   # Sample application
-│   ├── frontend/           # React SPA
-│   ├── backend/            # Node.js API
-│   ├── database/           # Postgres configuration
-│   └── helm/               # Helm charts
-└── .github/workflows/      # CI/CD pipeline
+┌─────────────────────────────────────────────┐
+│                Control Node                 │
+│            (Ansible Controller)             │
+└─────────────────┬───────────────────────────┘
+                  │ SSH + Ansible
+                  ▼
+┌─────────────────────────────────────────────┐
+│              Target Hosts                   │
+│  ┌─────────────────────────────────────────┐│
+│  │            K3s Cluster                  ││
+│  │  ┌─────────────┐  ┌─────────────────┐  ││
+│  │  │   ArgoCD    │  │   Demo Apps     │  ││
+│  │  │  (GitOps)   │  │   (Managed by   │  ││
+│  │  │             │  │    ArgoCD)      │  ││
+│  │  └─────────────┘  └─────────────────┘  ││
+│  └─────────────────────────────────────────┘│
+└─────────────────────────────────────────────┘
 ```
+
+## What This Project Does
+
+1. **Provisions K3s** - Installs lightweight Kubernetes on target hosts
+2. **Deploys ArgoCD** - Sets up GitOps controller for application management
+3. **Demonstrates GitOps** - Shows how applications are deployed and managed via Git
 
 ## Quick Start
 
 ### Prerequisites
 
-- Raspberry Pi 4 with Ubuntu Server 22.04 (ARM64)
-- External USB drive (8GB+) for persistent storage
-- Domain name or DuckDNS subdomain for TLS certificates (optional)
+- **Ansible** 2.15+ with `kubernetes.core` collection
+- **Python** 3.8+ with `kubernetes` library
+- **SSH access** to target hosts
+- **kubectl** for cluster interaction
 
-### 1. Prepare the Pi
+### Installation
 
 ```bash
-# Clone this repository
+# Clone repository
 git clone https://github.com/YOUR_USERNAME/k3s-argocd-rasp-pi.git
 cd k3s-argocd-rasp-pi
 
-# Mount USB storage
-make mount-usb
-# Follow the instructions to mount your USB drive
+# Install Ansible collections
+ansible-galaxy collection install -r requirements.yml
+
+# Update inventory with your hosts
+vim inventories/hosts.ini
 ```
 
-### 2. Bootstrap the Platform
+### Deploy K3s Cluster
 
 ```bash
-# One command to rule them all
-make bootstrap
+# Install K3s on target hosts
+ansible-playbook -i inventories/hosts.ini playbooks/k3s.yml
+
+# Verify cluster is ready
+kubectl get nodes
 ```
 
-This will:
-
-1. Install k3s with Pi-optimized settings
-2. Setup USB storage and create directories
-3. Create Kubernetes namespaces and storage resources
-4. Install Argo CD using official manifests
-5. Deploy the root application that manages all other apps
-
-### 3. Access Services
+### Deploy ArgoCD
 
 ```bash
-# Port forward to access services locally
-make port-forward-grafana    # http://localhost:3000 (admin/admin)
-make port-forward-argocd     # http://localhost:8080 (admin/get-password)
+# Install ArgoCD
+ansible-playbook playbooks/argocd.yml
 
-# Check status
-make status
+# Verify ArgoCD is running
+kubectl get pods -n argocd
+
+# Access ArgoCD UI
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Open https://localhost:8080 (admin/password from playbook output)
 ```
 
-## GitOps Architecture
+### Deploy Demo Application
 
-This platform uses the **App of Apps** pattern:
+```bash
+# Apply demo application via ArgoCD
+kubectl apply -f manifests/demo-app.yaml
 
-1. **Root Application** (`gitops/bootstrap/root-app.yaml`) - Applied once, manages everything
-2. **Child Applications** (`gitops/apps/*.yaml`) - Automatically discovered and deployed
+# Watch ArgoCD sync the application
+kubectl get applications -n argocd
+```
 
-### Adding New Applications
-
-Simply add a new YAML file to `gitops/apps/`:
+## Example ArgoCD Application
 
 ```yaml
-# gitops/apps/my-new-app.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: my-new-app
+  name: demo-app
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://charts.example.com
-    chart: my-chart
-    targetRevision: 1.0.0
+    repoURL: https://github.com/argoproj/argocd-example-apps.git
+    targetRevision: HEAD
+    path: guestbook
   destination:
     server: https://kubernetes.default.svc
-    namespace: my-namespace
+    namespace: default
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
 ```
 
-Argo CD will automatically discover and deploy it!
-
-## Included Applications
-
-- **ingress-nginx**: Load balancer and ingress controller
-- **cert-manager**: Automatic TLS certificates via Let's Encrypt
-- **monitoring**: Prometheus, Grafana, AlertManager (kube-prometheus-stack)
-- **logging**: Loki stack for log aggregation
-- **sample-app**: Three-tier demo application (frontend, backend, database)
-
-## Storage Configuration
-
-The platform uses an external USB drive mounted at `/mnt/usb-data`:
+## Project Structure
 
 ```
-/mnt/usb-data/
-├── postgres/              # PostgreSQL data
-├── prometheus/            # Prometheus TSDB
-├── loki/                 # Loki log chunks
-└── velero/               # Backup storage
+├── inventories/
+│   └── hosts.ini              # Ansible inventory
+├── playbooks/
+│   ├── k3s.yml               # K3s installation
+│   └── argocd.yml            # ArgoCD deployment
+├── roles/
+│   ├── k3s/                  # K3s installation role
+│   └── argocd/               # ArgoCD deployment role
+├── manifests/
+│   └── demo-app.yaml         # Example ArgoCD application
+├── ansible.cfg               # Ansible configuration
+└── requirements.yml          # Ansible collections
 ```
 
-## CI/CD Pipeline
+## Configuration
 
-GitHub Actions automatically:
+### Inventory Setup
 
-1. **Builds** multi-arch Docker images (amd64/arm64)
-2. **Pushes** to GitHub Container Registry
-3. **Updates** GitOps manifests with new image tags
-4. **Triggers** Argo CD sync for automatic deployment
+Edit `inventories/hosts.ini`:
 
-### Setting Up CI/CD
+```ini
+[k3s_cluster]
+k3s-node1 ansible_host=192.168.1.100
+k3s-node2 ansible_host=192.168.1.101
 
-1. Enable GitHub Container Registry in your repo settings
-2. Update image repositories in `gitops/apps/sample-app.yaml`
-3. Push to main branch - images build and deploy automatically!
-
-## Common Tasks
-
-```bash
-make help                   # Show all available commands
-make mount-usb              # Mount USB storage
-make bootstrap              # Bootstrap entire platform
-make port-forward-grafana   # Access Grafana dashboard
-make port-forward-argocd    # Access Argo CD UI
-make status                 # Show cluster status
-make sync-apps              # Force sync all applications
-make clean                  # Clean up everything
+[k3s_cluster:vars]
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/id_rsa
 ```
 
-## Monitoring & Observability
+### Customization
 
-- **Grafana**: Pre-configured dashboards for cluster and application metrics
-- **Prometheus**: Metrics collection with 7-day retention
-- **Loki**: Log aggregation with 7-day retention
-- **AlertManager**: Alert routing (configure webhooks as needed)
+- **K3s version**: Edit `roles/k3s/defaults/main.yml`
+- **ArgoCD version**: Edit `roles/argocd/defaults/main.yml`
+- **K3s options**: Modify `k3s_server_options` in defaults
 
-Access Grafana at `http://localhost:3000` (admin/admin) after port-forwarding.
+## Why This Matters
 
-## Customization
+This project demonstrates:
 
-### Update Configuration
+- **Infrastructure as Code** - Reproducible cluster provisioning
+- **GitOps Principles** - Declarative application deployment
+- **Modern DevOps Practices** - Automation, version control, and observability
+- **Scalable Architecture** - From single node to multi-node clusters
 
-1. **Modify values** in `gitops/apps/*.yaml`
-2. **Commit and push** - Argo CD syncs automatically
-3. **No kubectl needed** - everything is GitOps!
-
-### Add Custom Applications
-
-1. Create new YAML in `gitops/apps/`
-2. Point to your Helm chart or manifests
-3. Commit - Argo CD discovers and deploys
-
-### Resource Limits
-
-All components are configured with Pi-friendly resource limits:
-
-- CPU: 50m-500m per component
-- Memory: 64Mi-1Gi per component
-- Storage: Conservative retention periods
+Perfect for:
+- Development environments
+- CI/CD pipelines
+- Learning Kubernetes and GitOps
+- Small production workloads
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **USB not mounting**: Check `/dev/sda1` exists and filesystem is ext4
-2. **k3s not starting**: Ensure sufficient memory (4GB+ recommended)
-3. **Applications not syncing**: Check Argo CD logs: `kubectl logs -n argocd deployment/argocd-server`
-4. **Out of resources**: Reduce replica counts in app configurations
-
-### Useful Commands
-
+**K3s installation fails:**
 ```bash
-# Check Argo CD applications
-kubectl get applications -n argocd
+# Check connectivity
+ansible k3s_cluster -m ping
 
-# Check all pods
-kubectl get pods -A
-
-# Check storage
-kubectl get pv,pvc -A
-
-# Argo CD logs
-kubectl logs -n argocd deployment/argocd-server -f
-
-# Force application sync
-kubectl patch application <app-name> -n argocd --type merge -p '{"operation":{"sync":{}}}'
+# Verify sudo access
+ansible k3s_cluster -m shell -a "sudo whoami" --become
 ```
 
-## Security Considerations
+**ArgoCD not accessible:**
+```bash
+# Check ArgoCD pods
+kubectl get pods -n argocd
 
-- All services use least-privilege ServiceAccounts
-- Network policies restrict database access
-- TLS certificates via Let's Encrypt (when configured)
-- Secrets managed via Kubernetes Secrets
-- Multi-arch images scanned for vulnerabilities
+# Get admin password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+```
 
-## Resource Requirements
+**Applications not syncing:**
+```bash
+# Check application status
+kubectl get applications -n argocd
 
-- **CPU**: Raspberry Pi 4 (4 cores recommended)
-- **Memory**: 4GB+ RAM (8GB recommended)
-- **Storage**: 32GB+ SD card + 8GB+ USB drive
-- **Network**: Stable internet for image pulls and certificates
-
-## What Makes This Different
-
-✅ **Minimal glue code** - Uses official manifests and charts
-✅ **True GitOps** - Everything managed through Git
-✅ **Pi-optimized** - Resource limits tuned for ARM64
-✅ **Production-ready** - Monitoring, logging, backups included
-✅ **Easy to extend** - Just add YAML files to `gitops/apps/`
-✅ **Clean architecture** - Separation of concerns, no manual kubectl
+# View ArgoCD logs
+kubectl logs -n argocd deployment/argocd-server
+```
 
 ## Contributing
 
 1. Fork the repository
-2. Create feature branch
-3. Test on Pi hardware
-4. Submit pull request
+2. Create a feature branch
+3. Test changes on clean VMs
+4. Submit a pull request
 
 ## License
 
-MIT License - see LICENSE file for details.
-
----
-
-**Next Steps After Setup:**
-
-1. Configure your domain in `gitops/apps/sample-app.yaml`
-2. Set up DuckDNS or real domain for TLS certificates
-3. Customize monitoring dashboards in Grafana
-4. Add your own applications to `gitops/apps/`
+MIT License - see [LICENSE](LICENSE) file for details.

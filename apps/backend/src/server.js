@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
-const { Pool } = require("pg");
+const mysql = require("mysql2/promise");
 const promClient = require("prom-client");
 const winston = require("winston");
 require("dotenv").config();
@@ -69,29 +69,25 @@ register.registerMetric(databaseConnectionsActive);
 register.registerMetric(databaseQueryDuration);
 
 // Database connection
-const pool = new Pool({
-  host: process.env.DATABASE_HOST || "postgres-service",
-  port: process.env.DATABASE_PORT || 5432,
+const pool = mysql.createPool({
+  host: process.env.DATABASE_HOST || "mariadb-service",
+  port: process.env.DATABASE_PORT || 3306,
   database: process.env.DATABASE_NAME || "appdb",
-  user: process.env.DATABASE_USER || "postgres",
-  password: process.env.DATABASE_PASSWORD || "postgres",
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  user: process.env.DATABASE_USER || "appuser",
+  password: process.env.DATABASE_PASSWORD || "apppass123",
+  connectionLimit: 10,
+  acquireTimeout: 60000,
+  timeout: 60000,
 });
 
 // Test database connection
-pool.on("connect", () => {
-  logger.info("Connected to PostgreSQL database");
+pool.on("connection", () => {
+  logger.info("Connected to MariaDB database");
   databaseConnectionsActive.inc();
 });
 
-pool.on("remove", () => {
-  databaseConnectionsActive.dec();
-});
-
 pool.on("error", (err) => {
-  logger.error("PostgreSQL pool error:", err);
+  logger.error("MariaDB pool error:", err);
 });
 
 // Middleware
@@ -143,23 +139,23 @@ app.use(
 // Initialize database schema
 async function initializeDatabase() {
   try {
-    const client = await pool.connect();
+    const connection = await pool.getConnection();
 
     // Create users table if it doesn't exist
-    await client.query(`
+    await connection.execute(`
       CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         email VARCHAR(100) UNIQUE NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )
     `);
 
     // Create sample data if table is empty
-    const result = await client.query("SELECT COUNT(*) FROM users");
-    if (parseInt(result.rows[0].count) === 0) {
-      await client.query(`
+    const [result] = await connection.execute("SELECT COUNT(*) as count FROM users");
+    if (parseInt(result[0].count) === 0) {
+      await connection.execute(`
         INSERT INTO users (name, email) VALUES 
         ('John Doe', 'john@example.com'),
         ('Jane Smith', 'jane@example.com'),
@@ -168,7 +164,7 @@ async function initializeDatabase() {
       logger.info("Sample data inserted into users table");
     }
 
-    client.release();
+    connection.release();
     logger.info("Database initialized successfully");
   } catch (error) {
     logger.error("Database initialization failed:", error);
@@ -181,9 +177,9 @@ async function initializeDatabase() {
 app.get("/health", async (req, res) => {
   try {
     // Check database connection
-    const client = await pool.connect();
-    await client.query("SELECT 1");
-    client.release();
+    const connection = await pool.getConnection();
+    await connection.execute("SELECT 1");
+    connection.release();
 
     res.status(200).json({
       status: "healthy",
@@ -206,9 +202,9 @@ app.get("/health", async (req, res) => {
 // Readiness probe
 app.get("/ready", async (req, res) => {
   try {
-    const client = await pool.connect();
-    await client.query("SELECT 1");
-    client.release();
+    const connection = await pool.getConnection();
+    await connection.execute("SELECT 1");
+    connection.release();
     res.status(200).json({ status: "ready" });
   } catch (error) {
     res.status(503).json({ status: "not ready", error: error.message });
@@ -237,19 +233,19 @@ app.get("/metrics", async (req, res) => {
 app.get("/api/users", async (req, res) => {
   const start = Date.now();
   try {
-    const client = await pool.connect();
-    const result = await client.query(
+    const connection = await pool.getConnection();
+    const [rows] = await connection.execute(
       "SELECT * FROM users ORDER BY created_at DESC"
     );
-    client.release();
+    connection.release();
 
     const duration = (Date.now() - start) / 1000;
     databaseQueryDuration.labels("select").observe(duration);
 
     res.json({
       success: true,
-      data: result.rows,
-      count: result.rows.length,
+      data: rows,
+      count: rows.length,
     });
   } catch (error) {
     logger.error("Get users error:", error);
@@ -265,16 +261,16 @@ app.get("/api/users/:id", async (req, res) => {
   const start = Date.now();
   try {
     const { id } = req.params;
-    const client = await pool.connect();
-    const result = await client.query("SELECT * FROM users WHERE id = $1", [
+    const connection = await pool.getConnection();
+    const [rows] = await connection.execute("SELECT * FROM users WHERE id = ?", [
       id,
     ]);
-    client.release();
+    connection.release();
 
     const duration = (Date.now() - start) / 1000;
     databaseQueryDuration.labels("select").observe(duration);
 
-    if (result.rows.length === 0) {
+    if (rows.length === 0) {
       return res.status(404).json({
         success: false,
         error: "User not found",
@@ -283,7 +279,7 @@ app.get("/api/users/:id", async (req, res) => {
 
     res.json({
       success: true,
-      data: result.rows[0],
+      data: rows[0],
     });
   } catch (error) {
     logger.error("Get user error:", error);
@@ -307,23 +303,29 @@ app.post("/api/users", async (req, res) => {
       });
     }
 
-    const client = await pool.connect();
-    const result = await client.query(
-      "INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *",
+    const connection = await pool.getConnection();
+    const [result] = await connection.execute(
+      "INSERT INTO users (name, email) VALUES (?, ?)",
       [name, email]
     );
-    client.release();
+    
+    // Get the created user
+    const [rows] = await connection.execute(
+      "SELECT * FROM users WHERE id = ?",
+      [result.insertId]
+    );
+    connection.release();
 
     const duration = (Date.now() - start) / 1000;
     databaseQueryDuration.labels("insert").observe(duration);
 
     res.status(201).json({
       success: true,
-      data: result.rows[0],
+      data: rows[0],
     });
   } catch (error) {
     logger.error("Create user error:", error);
-    if (error.code === "23505") {
+    if (error.code === "ER_DUP_ENTRY") {
       // Unique violation
       res.status(409).json({
         success: false,
@@ -345,26 +347,33 @@ app.put("/api/users/:id", async (req, res) => {
     const { id } = req.params;
     const { name, email } = req.body;
 
-    const client = await pool.connect();
-    const result = await client.query(
-      "UPDATE users SET name = $1, email = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *",
+    const connection = await pool.getConnection();
+    const [result] = await connection.execute(
+      "UPDATE users SET name = ?, email = ? WHERE id = ?",
       [name, email, id]
     );
-    client.release();
-
-    const duration = (Date.now() - start) / 1000;
-    databaseQueryDuration.labels("update").observe(duration);
-
-    if (result.rows.length === 0) {
+    
+    if (result.affectedRows === 0) {
+      connection.release();
       return res.status(404).json({
         success: false,
         error: "User not found",
       });
     }
+    
+    // Get the updated user
+    const [rows] = await connection.execute(
+      "SELECT * FROM users WHERE id = ?",
+      [id]
+    );
+    connection.release();
+
+    const duration = (Date.now() - start) / 1000;
+    databaseQueryDuration.labels("update").observe(duration);
 
     res.json({
       success: true,
-      data: result.rows[0],
+      data: rows[0],
     });
   } catch (error) {
     logger.error("Update user error:", error);
@@ -381,17 +390,17 @@ app.delete("/api/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const client = await pool.connect();
-    const result = await client.query(
-      "DELETE FROM users WHERE id = $1 RETURNING *",
+    const connection = await pool.getConnection();
+    const [result] = await connection.execute(
+      "DELETE FROM users WHERE id = ?",
       [id]
     );
-    client.release();
+    connection.release();
 
     const duration = (Date.now() - start) / 1000;
     databaseQueryDuration.labels("delete").observe(duration);
 
-    if (result.rows.length === 0) {
+    if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
         error: "User not found",

@@ -81,20 +81,20 @@ backend:
     - name: PORT
       value: "3001"
     - name: DATABASE_HOST
-      value: "postgres-service"
+      value: "mariadb-service"
     - name: DATABASE_PORT
-      value: "5432"
+      value: "3306"
     - name: DATABASE_NAME
       value: "appdb"
     - name: DATABASE_USER
       valueFrom:
         secretKeyRef:
-          name: postgres-secret
+          name: mariadb-secret
           key: username
     - name: DATABASE_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: postgres-secret
+          name: mariadb-secret
           key: password
     - name: LOG_LEVEL
       value: "info"
@@ -140,18 +140,18 @@ backend:
 # Database configuration
 database:
   enabled: true
-  name: postgres
+  name: mariadb
 
   image:
-    repository: postgres
-    tag: "15-alpine"
+    repository: mariadb
+    tag: "10.11"
     pullPolicy: IfNotPresent
 
   service:
     type: ClusterIP
-    port: 5432
-    targetPort: 5432
-    name: postgres
+    port: 3306
+    targetPort: 3306
+    name: mariadb
 
   persistence:
     enabled: true
@@ -160,20 +160,23 @@ database:
     accessMode: ReadWriteOnce
 
   env:
-    - name: POSTGRES_DB
+    - name: MYSQL_DATABASE
       value: "appdb"
-    - name: POSTGRES_USER
+    - name: MYSQL_USER
       valueFrom:
         secretKeyRef:
-          name: postgres-secret
+          name: mariadb-secret
           key: username
-    - name: POSTGRES_PASSWORD
+    - name: MYSQL_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: postgres-secret
+          name: mariadb-secret
           key: password
-    - name: PGDATA
-      value: "/var/lib/postgresql/data/pgdata"
+    - name: MYSQL_ROOT_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: mariadb-secret
+          key: root-password
 
   resources:
     limits:
@@ -186,27 +189,24 @@ database:
   livenessProbe:
     exec:
       command:
-        - /bin/sh
+        - /bin/bash
         - -c
-        - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
+        - mysqladmin ping -h localhost -u root -p$MYSQL_ROOT_PASSWORD
     initialDelaySeconds: 30
     periodSeconds: 10
     timeoutSeconds: 5
-    failureThreshold: 6
+    failureThreshold: 3
 
   readinessProbe:
     exec:
       command:
-        - /bin/sh
+        - /bin/bash
         - -c
-        - -e
-        - |
-          exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1 -p 5432
-          [ -f /opt/bitnami/postgresql/tmp/.initialized ] || [ -f /bitnami/postgresql/.initialized ]
+        - mysql -h localhost -u $MYSQL_USER -p$MYSQL_PASSWORD -e "SELECT 1"
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 3
-    failureThreshold: 6
+    failureThreshold: 3
 
   nodeSelector: {}
   tolerations: []
@@ -214,15 +214,16 @@ database:
 
 # Secrets
 secrets:
-  postgres:
-    username: "postgres"
-    password: "postgres123" # Change in production
+  mariadb:
+    username: "appuser"
+    password: "apppass123" # Change in production
+    root-password: "rootpass123" # Change in production
 
 # ConfigMaps
 configMaps:
   app:
-    DATABASE_HOST: "postgres-service"
-    DATABASE_PORT: "5432"
+    DATABASE_HOST: "mariadb-service"
+    DATABASE_PORT: "3306"
     DATABASE_NAME: "appdb"
     LOG_LEVEL: "info"
     METRICS_ENABLED: "true"
@@ -277,7 +278,7 @@ networkPolicy:
     - to: []
       ports:
         - protocol: TCP
-          port: 5432 # PostgreSQL
+          port: 3306 # MariaDB
         - protocol: TCP
           port: 53 # DNS
         - protocol: UDP

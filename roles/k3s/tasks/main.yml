@@ -1,0 +1,44 @@
+---
+- name: Download K3s installation script
+  get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: '0755'
+
+- name: Install K3s
+  shell: |
+    INSTALL_K3S_VERSION={{ k3s_version }} \
+    INSTALL_K3S_EXEC="{{ k3s_server_options | join(' ') }}" \
+    /tmp/k3s-install.sh
+  args:
+    creates: "{{ k3s_install_dir }}/k3s"
+
+- name: Wait for K3s to be ready
+  wait_for:
+    port: 6443
+    host: localhost
+    timeout: 300
+
+- name: Create .kube directory
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    owner: "{{ ansible_env.USER }}"
+    mode: '0755'
+  become: no
+
+- name: Copy kubeconfig
+  copy:
+    src: "{{ k3s_config_dir }}/k3s.yaml"
+    dest: "{{ kubeconfig_path }}"
+    remote_src: yes
+    owner: "{{ ansible_env.USER }}"
+    mode: '0600'
+
+- name: Verify cluster is ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+  register: cluster_nodes
+  retries: 10
+  delay: 30

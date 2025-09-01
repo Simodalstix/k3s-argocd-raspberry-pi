@@ -15,6 +15,9 @@ spec:
         grafana:
           defaultDashboardsTimezone: Australia/Sydney
           adminPassword: admin
+          service:
+            type: NodePort
+            nodePort: 30300
           persistence:
             enabled: false  # Use emptyDir for Pi
           resources:

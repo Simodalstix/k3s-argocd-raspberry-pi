@@ -1,0 +1,7 @@
+---
+- name: Deploy ArgoCD
+  hosts: k3s_cluster
+  gather_facts: no
+  
+  roles:
+    - argocd
