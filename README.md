@@ -20,11 +20,11 @@ Automated provisioning of a lightweight Kubernetes cluster using **K3s** and **G
 │              Target Hosts                   │
 │  ┌─────────────────────────────────────────┐│
 │  │            K3s Cluster                  ││
-│  │  ┌─────────────┐  ┌─────────────────┐  ││
-│  │  │   ArgoCD    │  │   Demo Apps     │  ││
-│  │  │  (GitOps)   │  │   (Managed by   │  ││
-│  │  │             │  │    ArgoCD)      │  ││
-│  │  └─────────────┘  └─────────────────┘  ││
+│  │  ┌─────────────┐  ┌─────────────────┐   ││
+│  │  │   ArgoCD    │  │   Demo Apps     │   ││
+│  │  │  (GitOps)   │  │   (Managed by   │   ││
+│  │  │             │  │    ArgoCD)      │   ││
+│  │  └─────────────┘  └─────────────────┘   ││
 │  └─────────────────────────────────────────┘│
 └─────────────────────────────────────────────┘
 ```
@@ -164,6 +164,7 @@ This project demonstrates:
 - **Scalable Architecture** - From single node to multi-node clusters
 
 Perfect for:
+
 - Development environments
 - CI/CD pipelines
 - Learning Kubernetes and GitOps
@@ -174,6 +175,7 @@ Perfect for:
 ### Common Issues
 
 **K3s installation fails:**
+
 ```bash
 # Check connectivity
 ansible k3s_cluster -m ping
@@ -183,6 +185,7 @@ ansible k3s_cluster -m shell -a "sudo whoami" --become
 ```
 
 **ArgoCD not accessible:**
+
 ```bash
 # Check ArgoCD pods
 kubectl get pods -n argocd
@@ -192,6 +195,7 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 ```
 
 **Applications not syncing:**
+
 ```bash
 # Check application status
 kubectl get applications -n argocd

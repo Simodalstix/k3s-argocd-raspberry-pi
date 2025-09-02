@@ -11,7 +11,7 @@ spec:
     path: guestbook
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: sample-app
   syncPolicy:
     automated:
       prune: true

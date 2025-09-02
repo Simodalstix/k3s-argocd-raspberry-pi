@@ -39,6 +39,8 @@ install-argocd:
 
 # Deploy demo application
 deploy-demo:
+	@echo "Creating namespaces..."
+	kubectl apply -f manifests/namespaces.yaml
 	@echo "Deploying demo application..."
 	kubectl apply -f manifests/demo-app.yaml
 	@echo "Check status: kubectl get applications -n argocd"
