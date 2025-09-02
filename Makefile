@@ -28,22 +28,24 @@ install-k3s: setup
 	@echo "Installing K3s cluster..."
 	ansible-playbook playbooks/k3s.yml
 	@echo "Verifying cluster..."
-	kubectl get nodes
+	ssh simo-pi "kubectl get nodes"
 
 # Install ArgoCD
 install-argocd:
 	@echo "Deploying ArgoCD..."
 	ansible-playbook playbooks/argocd.yml
 	@echo "Verifying ArgoCD..."
-	kubectl get pods -n argocd
+	ssh simo-pi "kubectl get pods -n argocd"
 
 # Deploy demo application
 deploy-demo:
+	@echo "Copying manifests to Pi..."
+	scp manifests/*.yaml simo-pi:/tmp/
 	@echo "Creating namespaces..."
-	kubectl apply -f manifests/namespaces.yaml
+	ssh simo-pi "kubectl apply -f /tmp/namespaces.yaml"
 	@echo "Deploying demo application..."
-	kubectl apply -f manifests/demo-app.yaml
-	@echo "Check status: kubectl get applications -n argocd"
+	ssh simo-pi "kubectl apply -f /tmp/demo-app.yaml"
+	@echo "Check status: ssh simo-pi 'kubectl get applications -n argocd'"
 
 
 
@@ -52,19 +54,19 @@ port-forward-argocd:
 	@echo "Port forwarding ArgoCD to localhost:8080..."
 	@echo "Access ArgoCD at https://localhost:8080"
 	@echo "Username: admin"
-	@echo "Password: $$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)"
-	kubectl port-forward -n argocd svc/argocd-server 8080:443
+	@echo "Password: $$(ssh simo-pi 'kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d')"
+	ssh simo-pi "kubectl port-forward -n argocd svc/argocd-server 8080:443"
 
 # Get cluster status
 status:
 	@echo "=== Cluster Status ==="
-	kubectl get nodes
+	ssh simo-pi "kubectl get nodes"
 	@echo ""
 	@echo "=== ArgoCD Applications ==="
-	kubectl get applications -n argocd
+	ssh simo-pi "kubectl get applications -n argocd"
 	@echo ""
 	@echo "=== All Pods ==="
-	kubectl get pods -A
+	ssh simo-pi "kubectl get pods -A"
 
 # Clean up resources
 clean:
